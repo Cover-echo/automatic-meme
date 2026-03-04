@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>小爪的桌宠</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      background: transparent;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      user-select: none;
+      width: 300px;
+      height: 400px;
+    }
+    
+    .pet-container {
+      width: 300px;
+      height: 400px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      position: relative;
+      -webkit-app-region: drag;
+    }
+    
+    /* 宠物主体 */
+    .pet {
+      width: 200px;
+      height: 200px;
+      position: relative;
+      -webkit-app-region: no-drag;
+      cursor: pointer;
+      transition: transform 0.3s ease;
+      margin-bottom: 20px;
+    }
+    
+    .pet:hover {
+      transform: scale(1.05);
+    }
+    
+    .pet-svg {
+      width: 100%;
+      height: 100%;
+      filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));
+    }
+    
+    /* 状态气泡 */
+    .status-bubble {
+      position: absolute;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: white;
+      padding: 10px 16px;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      font-size: 13px;
+      color: #333;
+      max-width: 220px;
+      text-align: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+      z-index: 100;
+    }
+    
+    .status-bubble.show {
+      opacity: 1;
+    }
+    
+    .status-bubble::after {
+      content: '';
+      position: absolute;
+      bottom: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+      border-top: 8px solid white;
+    }
+    
+    /* 控制按钮 */
+    .controls {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      display: flex;
+      gap: 6px;
+      -webkit-app-region: no-drag;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      z-index: 200;
+    }
+    
+    .pet-container:hover .controls {
+      opacity: 1;
+    }
+    
+    .control-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      transition: transform 0.2s ease;
+    }
+    
+    .control-btn:hover {
+      transform: scale(1.1);
+    }
+    
+    .btn-close {
+      background: #ff5f57;
+      color: white;
+    }
+    
+    .btn-minimize {
+      background: #ffbd2e;
+      color: white;
+    }
+    
+    /* 连接状态指示器 */
+    .connection-status {
+      position: absolute;
+      bottom: 8px;
+      left: 8px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #4cd964;
+      -webkit-app-region: no-drag;
+    }
+    
+    .connection-status.disconnected {
+      background: #ff3b30;
+    }
+    
+    .connection-status.connecting {
+      background: #ffcc00;
+      animation: pulse 1s ease infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    /* 动画状态 */
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    
+    @keyframes wave {
+      0%, 100% { transform: rotate(0deg); }
+      25% { transform: rotate(10deg); }
+      75% { transform: rotate(-10deg); }
+    }
+    
+    .pet.bouncing .pet-body {
+      animation: bounce 1s ease infinite;
+    }
+    
+    .pet.waving .arm-right {
+      animation: wave 0.5s ease infinite;
+      transform-origin: bottom center;
+    }
+    
+    .eye-ellipse {
+      transition: all 0.2s ease;
+    }
+    
+    .pet.blink .eye-ellipse {
+      ry: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="pet-container">
+    <!-- 控制按钮 -->
+    <div class="controls">
+      <button class="control-btn btn-minimize" onclick="minimize()">−</button>
+      <button class="control-btn btn-close" onclick="closeApp()">✕</button>
+    </div>
+    
+    <!-- 状态气泡 -->
+    <div class="status-bubble" id="statusBubble">你好呀！(๑•̀ω•́๑)۶</div>
+    
+    <!-- 宠物主体 -->
+    <div class="pet" id="pet" onclick="onPetClick()">
+      <svg class="pet-svg" viewBox="0 0 200 200">
+        <!-- 身体 -->
+        <ellipse class="pet-body" cx="100" cy="120" rx="70" ry="60" fill="#FFB6C1"/>
+        
+        <!-- 左耳 -->
+        <ellipse cx="50" cy="70" rx="20" ry="30" fill="#FFB6C1" transform="rotate(-30 50 70)"/>
+        <ellipse cx="50" cy="70" rx="12" ry="20" fill="#FF69B4" transform="rotate(-30 50 70)"/>
+        
+        <!-- 右耳 -->
+        <ellipse cx="150" cy="70" rx="20" ry="30" fill="#FFB6C1" transform="rotate(30 150 70)"/>
+        <ellipse cx="150" cy="70" rx="12" ry="20" fill="#FF69B4" transform="rotate(30 150 70)"/>
+        
+        <!-- 脸 -->
+        <ellipse cx="100" cy="110" rx="55" ry="45" fill="#FFE4E1"/>
+        
+        <!-- 左眼 -->
+        <g class="eye" id="eyeLeft">
+          <ellipse class="eye-ellipse" cx="80" cy="105" rx="8" ry="10" fill="#333"/>
+          <circle cx="82" cy="102" r="3" fill="white"/>
+        </g>
+        
+        <!-- 右眼 -->
+        <g class="eye" id="eyeRight">
+          <ellipse class="eye-ellipse" cx="120" cy="105" rx="8" ry="10" fill="#333"/>
+          <circle cx="122" cy="102" r="3" fill="white"/>
+        </g>
+        
+        <!-- 嘴巴 -->
+        <path d="M 90 125 Q 100 135 110 125" stroke="#FF69B4" stroke-width="3" fill="none" stroke-linecap="round"/>
+        
+        <!-- 腮红 -->
+        <ellipse cx="70" cy="120" rx="10" ry="6" fill="#FF69B4" opacity="0.6"/>
+        <ellipse cx="130" cy="120" rx="10" ry="6" fill="#FF69B4" opacity="0.6"/>
+        
+        <!-- 左手 -->
+        <ellipse class="arm-left" cx="40" cy="130" rx="15" ry="20" fill="#FFB6C1" transform="rotate(-20 40 130)"/>
+        
+        <!-- 右手 -->
+        <ellipse class="arm-right" cx="160" cy="130" rx="15" ry="20" fill="#FFB6C1" transform="rotate(20 160 130)"/>
+      </svg>
+    </div>
+    
+    <!-- 连接状态 -->
+    <div class="connection-status" id="connectionStatus" title="OpenClaw 连接状态"></div>
+  </div>
+  
+  <script>
+    const { ipcRenderer } = require('electron');
+    
+    const pet = document.getElementById('pet');
+    const statusBubble = document.getElementById('statusBubble');
+    const connectionStatus = document.getElementById('connectionStatus');
+    
+    let isConnected = false;
+    let sessionKey = null;
+    
+    function closeApp() {
+      ipcRenderer.send('close-window');
+    }
+    
+    function minimize() {
+      ipcRenderer.send('minimize-window');
+    }
+    
+    function onPetClick() {
+      showStatus('在呢在呢！(≧∇≦)', 2000);
+      pet.classList.add('waving');
+      setTimeout(() => pet.classList.remove('waving'), 1000);
+      checkOpenClawConnection();
+    }
+    
+    function showStatus(text, duration = 2000) {
+      statusBubble.textContent = text;
+      statusBubble.classList.add('show');
+      setTimeout(() => statusBubble.classList.remove('show'), duration);
+    }
+    
+    function blink() {
+      const leftEye = document.querySelector('#eyeLeft .eye-ellipse');
+      const rightEye = document.querySelector('#eyeRight .eye-ellipse');
+      
+      if (leftEye && rightEye) {
+        leftEye.setAttribute('ry', '1');
+        rightEye.setAttribute('ry', '1');
+        setTimeout(() => {
+          leftEye.setAttribute('ry', '10');
+          rightEye.setAttribute('ry', '10');
+        }, 150);
+      }
+    }
+    
+    setInterval(blink, 4000 + Math.random() * 2000);
+    
+    async function checkOpenClawConnection() {
+      connectionStatus.className = 'connection-status connecting';
+      
+      try {
+        const { exec } = require('child_process');
+        
+        exec('openclaw sessions --json', (error, stdout, stderr) => {
+          if (error) {
+            connectionStatus.className = 'connection-status disconnected';
+            showStatus('OpenClaw 未连接', 3000);
+            return;
+          }
+          
+          connectionStatus.className = 'connection-status';
+          isConnected = true;
+          showStatus('已连接 OpenClaw！✨', 2000);
+          
+          try {
+            const data = JSON.parse(stdout);
+            if (data && data.sessions && data.sessions.length > 0) {
+              sessionKey = data.sessions[0].key;
+              console.log('Connected to session:', sessionKey);
+            }
+          } catch (e) {
+            console.log('Could not parse sessions:', e);
+          }
+        });
+      } catch (e) {
+        connectionStatus.className = 'connection-status disconnected';
+        console.error('Connection error:', e);
+      }
+    }
+    
+    async function fetchMessages() {
+      if (!isConnected || !sessionKey) return;
+      
+      const { exec } = require('child_process');
+      exec(`openclaw sessions_history --sessionKey "${sessionKey}" --limit 3`, (error, stdout, stderr) => {
+        if (error) {
+          console.error('Failed to fetch history:', error);
+          return;
+        }
+        
+        try {
+          const history = JSON.parse(stdout);
+          if (history && history.messages && history.messages.length > 0) {
+            const lastMessage = history.messages[history.messages.length - 1];
+            if (lastMessage.role === 'assistant' && lastMessage.content) {
+              const preview = lastMessage.content.substring(0, 30) + (lastMessage.content.length > 30 ? '...' : '');
+              showStatus(preview, 3000);
+              pet.classList.add('bouncing');
+              setTimeout(() => pet.classList.remove('bouncing'), 2000);
+            }
+          }
+        } catch (e) {
+          console.error('Could not parse history:', e);
+        }
+      });
+    }
+    
+    setInterval(fetchMessages, 10000);
+    
+    showStatus('你好呀！(๑•̀ω•́๑)۶', 3000);
+    setTimeout(checkOpenClawConnection, 2000);
+  </script>
+</body>
+</html>

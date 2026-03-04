@@ -1,0 +1,16 @@
+# 依赖
+node_modules/
+mediapipe-npm/
+
+# 编译产物
+*.log
+.DS_Store
+
+# 敏感信息
+.env
+*.key
+*.secret
+
+# 临时文件
+tmp/
+temp/

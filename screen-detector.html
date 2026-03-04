@@ -1,0 +1,2560 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>👁️ 屏幕注视检测器 - 眨眼 & 表情检测</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁️</text></svg>">
+    
+    <!-- GSAP 动画库 (可选，加载失败不影响核心功能) -->
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+    <script>
+        // GSAP 加载检测 - 如果失败则创建空对象避免报错
+        window.addEventListener('load', function() {
+            if (typeof window.gsap === 'undefined') {
+                console.warn('⚠️ GSAP 加载失败，使用降级模式（无动画）');
+                window.gsap = {
+                    from: function() {},
+                    to: function() {},
+                    fromTo: function() {}
+                };
+            } else {
+                console.log('✅ GSAP 加载成功');
+            }
+        });
+    </script>
+    
+    <style>
+        /* ============================================
+           基础样式 - 白色极简主义
+           ============================================ */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', '思源黑体', sans-serif;
+            background: #FFFFFF;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            color: #000000;
+        }
+
+        /* 主容器 */
+        .container {
+            background: #FFFFFF;
+            max-width: 1200px;
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 32px;
+            align-items: start;
+        }
+
+        /* 标题区域 */
+        .header {
+            grid-column: 1 / -1;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: 600;
+            color: #000000;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #666666;
+            font-weight: 400;
+        }
+
+        /* ============================================
+           视频区域
+           ============================================ */
+        .video-section {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .video-wrapper {
+            position: relative;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #000000;
+            border: 1px solid #E5E5E5;
+            transition: box-shadow 0.3s ease, transform 0.3s ease;
+        }
+
+        .video-wrapper:hover {
+            box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+        }
+
+        #video {
+            width: 100%;
+            display: block;
+            transform: scaleX(-1);
+        }
+
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+        }
+
+        /* 性能指示器 */
+        .perf-indicator {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(0,0,0,0.75);
+            color: #10b981;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: 'SF Mono', Monaco, monospace;
+            z-index: 10;
+        }
+
+        /* ============================================
+           控制面板（右侧）
+           ============================================ */
+        .control-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* 状态面板 */
+        .status-panel {
+            background: #FFFFFF;
+            border: 1px solid #E5E5E5;
+            border-radius: 8px;
+            padding: 20px;
+            transition: box-shadow 0.3s ease;
+        }
+
+        .status-panel:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,0.04);
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #E5E5E5;
+        }
+
+        .status-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #E5E5E5;
+            transition: all 0.3s ease;
+        }
+
+        .status-dot.watching {
+            background: #10b981;
+            box-shadow: 0 0 0 4px rgba(16,185,129,0.15);
+        }
+
+        .status-dot.away {
+            background: #ef4444;
+            box-shadow: 0 0 0 4px rgba(239,68,68,0.15);
+        }
+
+        .status-text {
+            font-size: 15px;
+            font-weight: 600;
+            color: #000000;
+        }
+
+        /* 计时器显示 */
+        .timer-display {
+            font-size: 42px;
+            font-weight: 700;
+            color: #000000;
+            text-align: center;
+            font-family: 'SF Mono', Monaco, monospace;
+            letter-spacing: -2px;
+            margin: 8px 0 20px;
+        }
+
+        /* 统计网格 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .stat-item {
+            background: #FAFAFA;
+            border: 1px solid #E5E5E5;
+            border-radius: 6px;
+            padding: 14px 10px;
+            text-align: center;
+            transition: all 0.2s ease;
+        }
+
+        .stat-item:hover {
+            background: #F5F5F5;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #999999;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 500;
+        }
+
+        .stat-value {
+            font-size: 22px;
+            font-weight: 600;
+            color: #000000;
+            font-family: 'SF Mono', Monaco, monospace;
+            letter-spacing: -1px;
+        }
+
+        .stat-unit {
+            font-size: 10px;
+            color: #999999;
+            margin-top: 4px;
+        }
+
+        /* 疲劳状态 */
+        .fatigue-item {
+            grid-column: span 2;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: #E5E5E5;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #10b981;
+            border-radius: 2px;
+            transition: width 0.5s ease;
+            width: 0%;
+        }
+
+        .progress-fill.tired {
+            background: #f59e0b;
+        }
+
+        .progress-fill.veryTired {
+            background: #ef4444;
+        }
+
+        /* 休息进度 */
+        .break-section {
+            margin-top: 8px;
+            padding-top: 16px;
+            border-top: 1px solid #E5E5E5;
+        }
+
+        .break-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #666666;
+            margin-bottom: 6px;
+        }
+
+        /* ============================================
+           控制按钮
+           ============================================ */
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        button {
+            padding: 14px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            background: #10b981;
+            color: #FFFFFF;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: scale(1.03);
+            box-shadow: 0 6px 20px rgba(16,185,129,0.2);
+        }
+
+        .btn-primary:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: #FFFFFF;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            transform: scale(1.03);
+            box-shadow: 0 6px 20px rgba(239,68,68,0.2);
+        }
+
+        .btn-danger:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+
+        .btn-secondary {
+            background: #F5F5F5;
+            color: #333333;
+            border: 1px solid #E5E5E5;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: #EEEEEE;
+            transform: scale(1.03);
+        }
+
+        .btn-secondary:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* ============================================
+           设置面板
+           ============================================ */
+        .settings-panel {
+            background: #FFFFFF;
+            border: 1px solid #E5E5E5;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .settings-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #000000;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #E5E5E5;
+        }
+
+        .settings-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .setting-label {
+            color: #666666;
+            font-size: 13px;
+            font-weight: 400;
+        }
+
+        .setting-input {
+            width: 70px;
+            padding: 8px;
+            border: 1px solid #E5E5E5;
+            border-radius: 6px;
+            text-align: center;
+            font-size: 13px;
+            font-family: inherit;
+            transition: border-color 0.2s ease;
+        }
+
+        .setting-input:focus {
+            outline: none;
+            border-color: #10b981;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            background: #E5E5E5;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .toggle-switch.active {
+            background: #10b981;
+        }
+
+        .toggle-knob {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: #FFFFFF;
+            border-radius: 50%;
+            transition: transform 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .toggle-switch.active .toggle-knob {
+            transform: translateX(20px);
+        }
+
+        /* ============================================
+           警告覆盖层
+           ============================================ */
+        .alert-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(239,68,68,0.15);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+
+        .alert-overlay.active {
+            display: flex;
+        }
+
+        .alert-box {
+            background: #FFFFFF;
+            padding: 40px 60px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+            border: 2px solid #ef4444;
+        }
+
+        .alert-box h2 {
+            color: #ef4444;
+            font-size: 24px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .alert-box p {
+            color: #666666;
+            font-size: 15px;
+        }
+
+        /* ============================================
+           加载状态
+           ============================================ */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666666;
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #F5F5F5;
+            border-top: 3px solid #10b981;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* ============================================
+           帮助和错误面板
+           ============================================ */
+        .help-panel, .error-panel {
+            grid-column: 1 / -1;
+            border-radius: 8px;
+            padding: 16px 20px;
+            border: 1px solid;
+        }
+
+        .help-panel {
+            background: #FFFBF0;
+            border-color: #FCD34D;
+        }
+
+        .error-panel {
+            background: #FEF2F2;
+            border-color: #FECACA;
+        }
+
+        .help-panel h3, .error-panel h3 {
+            margin-bottom: 8px;
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .help-panel ul, .error-panel ul {
+            margin-left: 20px;
+            line-height: 1.8;
+            font-size: 13px;
+            color: #666666;
+        }
+
+        .help-panel code, .error-panel code {
+            background: rgba(0,0,0,0.06);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 12px;
+        }
+
+        .close-btn {
+            float: right;
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0;
+            width: auto;
+            color: inherit;
+            transition: opacity 0.2s ease;
+        }
+
+        .close-btn:hover {
+            opacity: 0.6;
+        }
+
+        /* ============================================
+           休息提醒
+           ============================================ */
+        .break-reminder {
+            grid-column: 1 / -1;
+            background: #10b981;
+            color: #FFFFFF;
+            padding: 16px 24px;
+            border-radius: 8px;
+            text-align: center;
+            display: none;
+        }
+
+        .break-reminder.show {
+            display: block;
+        }
+
+        .break-reminder h3 {
+            font-size: 15px;
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+
+        .break-reminder p {
+            font-size: 13px;
+            opacity: 0.95;
+        }
+
+        /* ============================================
+           校准界面
+           ============================================ */
+        #calibrationOverlay {
+            background: rgba(0,0,0,0.95) !important;
+        }
+
+        #calibrationPoint {
+            width: 50px !important;
+            height: 50px !important;
+            border: 3px solid #ef4444 !important;
+            background: radial-gradient(circle, #ef4444 0%, transparent 70%) !important;
+        }
+
+        /* ============================================
+           响应式设计
+           ============================================ */
+        /* 桌面端：三列布局（视频居中，两侧面板） */
+        @media (min-width: 1024px) {
+            .container {
+                grid-template-columns: 1fr minmax(560px, 1fr) 1fr;
+            }
+            
+            .video-section {
+                grid-column: 2;
+            }
+            
+            .control-panel {
+                grid-column: 3;
+            }
+            
+            .header {
+                grid-column: 1 / -1;
+            }
+        }
+
+        /* 平板端：两列布局 */
+        @media (max-width: 1023px) and (min-width: 768px) {
+            .container {
+                grid-template-columns: 1fr 400px;
+                gap: 24px;
+            }
+            
+            .video-section {
+                grid-column: 1;
+            }
+            
+            .control-panel {
+                grid-column: 2;
+            }
+        }
+
+        /* 移动端：单列布局 */
+        @media (max-width: 767px) {
+            body {
+                padding: 12px;
+                align-items: flex-start;
+            }
+            
+            .container {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+            
+            .video-section {
+                grid-column: 1;
+            }
+            
+            .control-panel {
+                grid-column: 1;
+            }
+            
+            h1 {
+                font-size: 22px;
+            }
+            
+            .timer-display {
+                font-size: 36px;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .fatigue-item {
+                grid-column: span 2;
+            }
+            
+            .controls {
+                flex-direction: row;
+                flex-wrap: wrap;
+            }
+            
+            .controls button {
+                flex: 1;
+                min-width: calc(50% - 5px);
+            }
+        }
+
+        /* 小屏幕手机 */
+        @media (max-width: 480px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .fatigue-item {
+                grid-column: span 1;
+            }
+            
+            .controls button {
+                width: 100%;
+                min-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 警告覆盖层 -->
+    <div class="alert-overlay" id="alertOverlay">
+        <div class="alert-box">
+            <h2>⚠️ 请注意屏幕!</h2>
+            <p>检测到您视线已离开</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 标题 -->
+        <div class="header">
+            <h1>👁️ 屏幕注视检测器</h1>
+            <p class="subtitle">AI 人脸识别 · 专注力追踪 · 休息提醒</p>
+        </div>
+
+        <!-- 帮助面板 -->
+        <div class="help-panel hidden" id="helpPanel">
+            <button class="close-btn" onclick="toggleHelp()">×</button>
+            <h3>📖 使用说明</h3>
+            <ul>
+                <li><strong>推荐：</strong>运行 <code>node start-server.js</code> 启动本地服务器</li>
+                <li><strong>Safari 用户：</strong>可直接双击打开 HTML 文件</li>
+                <li><strong>Chrome/Edge 用户：</strong>必须通过 localhost 访问</li>
+            </ul>
+        </div>
+
+        <!-- 错误面板 -->
+        <div class="error-panel hidden" id="errorPanel">
+            <button class="close-btn" onclick="closeError()">×</button>
+            <h3>⚠️ 错误提示</h3>
+            <p id="errorMessage"></p>
+        </div>
+
+        <!-- 休息提醒 -->
+        <div class="break-reminder" id="breakReminder">
+            <h3>☕ 休息一下吧！</h3>
+            <p>您已经专注了 <span id="breakTimeDisplay">25</span> 分钟，建议休息 5 分钟</p>
+        </div>
+
+        <!-- 视频区域 -->
+        <div class="video-section">
+            <div class="video-wrapper">
+                <div class="perf-indicator" id="perfIndicator">FPS: --</div>
+                <div class="video-container">
+                    <video id="video" autoplay playsinline muted></video>
+                    <canvas id="canvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 控制面板 -->
+        <div class="control-panel">
+            <!-- 状态面板 -->
+            <div class="status-panel">
+                <div class="status-bar">
+                    <div class="status-left">
+                        <div class="status-dot" id="statusDot"></div>
+                        <div class="status-text" id="statusText">准备就绪</div>
+                    </div>
+                </div>
+
+                <div class="timer-display" id="timerDisplay">00:00</div>
+
+                <!-- 基础统计 -->
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-label">专注时间</div>
+                        <div class="stat-value" id="focusTime">00:00</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">离开次数</div>
+                        <div class="stat-value" id="awayCount">0</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">专注率</div>
+                        <div class="stat-value" id="focusRate">100%</div>
+                    </div>
+                </div>
+
+                <!-- 眨眼和表情 -->
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-label">眨眼频率</div>
+                        <div class="stat-value" id="blinkRate">--</div>
+                        <div class="stat-unit">次/分钟</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">眨眼次数</div>
+                        <div class="stat-value" id="blinkCount">0</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">表情</div>
+                        <div class="stat-value" id="expression">--</div>
+                    </div>
+                </div>
+
+                <!-- 疲劳和视线 -->
+                <div class="stats-grid">
+                    <div class="stat-item fatigue-item">
+                        <div class="stat-label">疲劳状态</div>
+                        <div class="stat-value" id="fatigueLevel">😐 正常</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="fatigueBar"></div>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">视线位置</div>
+                        <div class="stat-value" style="font-size:14px;" id="gazePosition">--</div>
+                    </div>
+                </div>
+
+                <!-- 休息进度 -->
+                <div class="break-section">
+                    <div class="break-header">
+                        <span>距离休息提醒</span>
+                        <span id="breakProgressText">25:00</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="breakProgress"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 控制按钮 -->
+            <div class="controls">
+                <button class="btn-primary" id="btnStart">
+                    <span>▶️</span> 开始检测
+                </button>
+                <button class="btn-danger" id="btnStop" disabled>
+                    <span>⏹️</span> 停止检测
+                </button>
+                <button class="btn-secondary" id="btnReset">
+                    <span>🔄</span> 重置
+                </button>
+                <button class="btn-secondary" id="btnCalibrate">
+                    <span>🎯</span> 校准
+                </button>
+                <button class="btn-secondary" id="btnHelp">
+                    <span>❓</span> 帮助
+                </button>
+            </div>
+
+            <!-- 设置面板 -->
+            <div class="settings-panel">
+                <div class="settings-title">⚙️ 设置</div>
+                <div class="settings-grid">
+                    <div class="setting-item">
+                        <span class="setting-label">离开检测阈值 (秒)</span>
+                        <input type="number" class="setting-input" id="thresholdInput" value="3" min="1" max="10">
+                    </div>
+                    <div class="setting-item">
+                        <span class="setting-label">声音提醒</span>
+                        <div class="toggle-switch active" id="soundToggle" onclick="toggleSound()">
+                            <div class="toggle-knob"></div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <span class="setting-label">休息提醒 (分钟)</span>
+                        <input type="number" class="setting-input" id="breakIntervalInput" value="25" min="5" max="60">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 加载指示器 -->
+        <div class="loading" id="loading">
+            <div class="loading-spinner"></div>
+            <p>正在加载 AI 模型...</p>
+            <p style="font-size: 12px; color: #999; margin-top: 8px;">首次加载可能需要 30-60 秒</p>
+        </div>
+    </div>
+
+    <!-- MediaPipe 依赖库 - 100% 本地加载 -->
+    <script src="mediapipe-libs/face_mesh.js?v=20260304"></script>
+    <script src="mediapipe-libs/camera_utils.js?v=20260304"></script>
+    <script src="mediapipe-libs/drawing_utils.js?v=20260304"></script>
+    
+    <!-- 库加载验证 -->
+    <script>
+        (function() {
+            console.log('📦 加载本地 MediaPipe 库...');
+            
+            // 页面加载完成后检查
+            window.addEventListener('load', function() {
+                setTimeout(function() {
+                    console.log('FaceMesh:', typeof window.FaceMesh);
+                    console.log('Camera:', typeof window.Camera);
+                    console.log('drawConnectors:', typeof window.drawConnectors);
+                    
+                    if (typeof window.FaceMesh === 'undefined') {
+                        console.error('❌ FaceMesh 未加载！检查 mediapipe-libs/face_mesh.js');
+                    }
+                    if (typeof window.Camera === 'undefined') {
+                        console.error('❌ Camera 未加载！检查 mediapipe-libs/camera_utils.js');
+                    }
+                    if (typeof window.drawConnectors === 'undefined') {
+                        console.error('❌ drawConnectors 未加载！检查 mediapipe-libs/drawing_utils.js');
+                    }
+                    
+                    if (typeof window.FaceMesh !== 'undefined' && 
+                        typeof window.Camera !== 'undefined' && 
+                        typeof window.drawConnectors !== 'undefined') {
+                        console.log('✅ 所有本地库加载成功！');
+                    }
+                }, 500);
+            });
+        })();
+    </script>
+
+    <script>
+        // ============================================
+        // 配置和状态
+        // ============================================
+        const CONFIG = {
+            defaultThreshold: 3,
+            defaultBreakInterval: 25,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5,
+            alertCooldown: 2000,
+            // 校准配置
+            calibrationPoints: 5 // 5 点校准
+        };
+
+        // 校准状态
+        const calibrationState = {
+            isCalibrating: false,
+            currentPoint: 0,
+            points: [
+                { x: 0.1, y: 0.1, name: '左上' },
+                { x: 0.9, y: 0.1, name: '右上' },
+                { x: 0.5, y: 0.5, name: '中心' },
+                { x: 0.1, y: 0.9, name: '左下' },
+                { x: 0.9, y: 0.9, name: '右下' }
+            ],
+            irisData: [], // 存储每个点的虹膜位置
+            gazeTransform: null // 存储变换矩阵
+        };
+
+        const state = {
+            isRunning: false,
+            isWatching: false,
+            awayStartTime: null,
+            focusStartTime: null,
+            totalFocusTime: 0,
+            awayCount: 0,
+            lastAwayAlert: 0,
+            frameCount: 0,
+            lastFpsUpdate: 0,
+            currentFps: 0,
+            frameSkipCounter: 0,
+            breakStartTime: null,
+            lastBreakReminder: 0,
+            soundEnabled: true,
+            // 眨眼检测
+            blinkCount: 0,
+            lastBlinkTime: 0,
+            blinkRatePerMinute: 0,
+            leftEyeClosed: false,
+            rightEyeClosed: false,
+            // 疲劳检测
+            fatigueLevel: 'normal', // normal, tired, veryTired
+            lastBlinkRateCheck: 0,
+            blinkRateHistory: [],
+            // 表情检测
+            mouthOpen: false,
+            smileDetected: false,
+            expression: 'neutral',
+            // 眼球追踪
+            gazePoint: { x: 0.5, y: 0.5 } // 归一化坐标 (0-1)
+        };
+
+        let videoElement = null;
+        let canvasElement = null;
+        let canvasCtx = null;
+        let faceMesh = null;
+        let camera = null;
+        let statsInterval = null;
+        let breakInterval = null;
+
+        // ============================================
+        // 工具函数
+        // ============================================
+        function formatTime(ms) {
+            const seconds = Math.floor(ms / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+
+            if (hours > 0) {
+                return `${hours}:${String(minutes % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+            }
+            return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+        }
+
+        function toggleHelp() {
+            const panel = document.getElementById('helpPanel');
+            panel.classList.toggle('hidden');
+            
+            // GSAP 动画
+            if (!panel.classList.contains('hidden')) {
+                gsap.from(panel, {
+                    opacity: 0,
+                    y: -20,
+                    duration: 0.4,
+                    ease: 'power3.out'
+                });
+            }
+        }
+
+        function closeError() {
+            const panel = document.getElementById('errorPanel');
+            gsap.to(panel, {
+                opacity: 0,
+                y: -10,
+                duration: 0.3,
+                ease: 'power3.out',
+                onComplete: () => panel.classList.add('hidden')
+            });
+        }
+
+        function showError(message) {
+            const panel = document.getElementById('errorPanel');
+            document.getElementById('errorMessage').textContent = message;
+            panel.classList.remove('hidden');
+            
+            // GSAP 动画
+            gsap.from(panel, {
+                opacity: 0,
+                y: -20,
+                duration: 0.4,
+                ease: 'power3.out'
+            });
+        }
+
+        function toggleSound() {
+            state.soundEnabled = !state.soundEnabled;
+            document.getElementById('soundToggle').classList.toggle('active', state.soundEnabled);
+        }
+
+        // ============================================
+        // 存储（带降级处理）
+        // ============================================
+        const Storage = {
+            _available: null,
+
+            isAvailable() {
+                if (this._available !== null) return this._available;
+                try {
+                    localStorage.setItem('__test__', '1');
+                    localStorage.removeItem('__test__');
+                    this._available = true;
+                } catch (e) {
+                    this._available = false;
+                }
+                return this._available;
+            },
+
+            get(key, defaultValue) {
+                if (!this.isAvailable()) return defaultValue;
+                try {
+                    const val = localStorage.getItem(key);
+                    return val !== null ? JSON.parse(val) : defaultValue;
+                } catch (e) {
+                    return defaultValue;
+                }
+            },
+
+            set(key, value) {
+                if (!this.isAvailable()) return;
+                try {
+                    localStorage.setItem(key, JSON.stringify(value));
+                } catch (e) {}
+            }
+        };
+
+        // ============================================
+        // 页面加载动画
+        // ============================================
+        function animatePageLoad() {
+            const elements = [
+                '.header',
+                '.video-wrapper',
+                '.status-panel',
+                '.controls button',
+                '.settings-panel'
+            ];
+            
+            gsap.from(elements, {
+                opacity: 0,
+                y: 30,
+                duration: 0.6,
+                stagger: 0.1,
+                ease: 'power3.out',
+                delay: 0.2
+            });
+        }
+
+        // ============================================
+        // 初始化
+        // ============================================
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('🚀 初始化屏幕检测器...');
+            console.log('📦 检查依赖库...');
+
+            // 加载保存的设置
+            const savedThreshold = Storage.get('detector_threshold', CONFIG.defaultThreshold);
+            const savedBreakInterval = Storage.get('detector_break_interval', CONFIG.defaultBreakInterval);
+            state.soundEnabled = Storage.get('detector_sound', true);
+
+            document.getElementById('thresholdInput').value = savedThreshold;
+            document.getElementById('breakIntervalInput').value = savedBreakInterval;
+            document.getElementById('soundToggle').classList.toggle('active', state.soundEnabled);
+
+            // 绑定事件
+            document.getElementById('btnStart').addEventListener('click', startDetection);
+            document.getElementById('btnStop').addEventListener('click', stopDetection);
+            document.getElementById('btnReset').addEventListener('click', resetStats);
+            document.getElementById('btnCalibrate').addEventListener('click', startCalibration);
+            document.getElementById('btnHelp').addEventListener('click', toggleHelp);
+
+            document.getElementById('thresholdInput').addEventListener('change', (e) => {
+                Storage.set('detector_threshold', parseInt(e.target.value));
+            });
+
+            document.getElementById('breakIntervalInput').addEventListener('change', (e) => {
+                Storage.set('detector_break_interval', parseInt(e.target.value));
+            });
+
+            // 检查本地库是否加载成功
+            if (typeof FaceMesh === 'undefined') {
+                showError('FaceMesh 未加载，请检查 mediapipe-libs/face_mesh.js 是否存在\n\n刷新页面重试，或查看浏览器控制台 (F12) 获取详细信息');
+                document.getElementById('loading').classList.add('hidden');
+                return;
+            }
+            
+            if (typeof Camera === 'undefined') {
+                showError('Camera 未加载，请检查 mediapipe-libs/camera_utils.js 是否存在\n\n刷新页面重试，或查看浏览器控制台 (F12) 获取详细信息');
+                document.getElementById('loading').classList.add('hidden');
+                return;
+            }
+            
+            if (typeof drawConnectors === 'undefined') {
+                showError('drawConnectors 未加载，请检查 mediapipe-libs/drawing_utils.js 是否存在\n\n刷新页面重试，或查看浏览器控制台 (F12) 获取详细信息');
+                document.getElementById('loading').classList.add('hidden');
+                return;
+            }
+            
+            console.log('✓ 所有本地库加载成功');
+
+            // 初始化 FaceMesh
+            await initFaceMesh();
+            
+            // 加载已保存的校准数据
+            loadCalibration();
+            
+            // 页面加载动画
+            animatePageLoad();
+            
+            // 首次使用提示校准
+            setTimeout(() => {
+                const hasCalibration = localStorage.getItem('gaze_calibration');
+                if (!hasCalibration) {
+                    const toast = document.createElement('div');
+                    toast.style.cssText = `
+                        position: fixed;
+                        top: 20px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        background: #10b981;
+                        color: white;
+                        padding: 16px 32px;
+                        border-radius: 8px;
+                        font-size: 15px;
+                        box-shadow: 0 8px 30px rgba(16,185,129,0.25);
+                        z-index: 10000;
+                        cursor: pointer;
+                    `;
+                    toast.innerHTML = '🎯 建议进行眼球校准以提高精度（点击开始）';
+                    toast.onclick = () => {
+                        gsap.to(toast, {
+                            opacity: 0,
+                            y: -20,
+                            duration: 0.3,
+                            ease: 'power3.out',
+                            onComplete: () => {
+                                toast.remove();
+                                startCalibration();
+                            }
+                        });
+                    };
+                    document.body.appendChild(toast);
+                    
+                    setTimeout(() => {
+                        gsap.to(toast, {
+                            opacity: 0,
+                            y: -20,
+                            duration: 0.3,
+                            ease: 'power3.out',
+                            onComplete: () => toast.remove()
+                        });
+                    }, 8000);
+                }
+            }, 3000);
+        });
+
+        async function initFaceMesh() {
+            try {
+                faceMesh = new FaceMesh({
+                    locateFile: (file) => {
+                        // 从本地 mediapipe-libs 目录加载资源文件
+                        const baseUrl = window.location.origin + '/mediapipe-libs/';
+                        console.log('📦 加载资源文件:', file);
+                        return baseUrl + file;
+                    }
+                });
+
+                faceMesh.setOptions({
+                    maxNumFaces: 1,
+                    refineLandmarks: true,
+                    minDetectionConfidence: CONFIG.minDetectionConfidence,
+                    minTrackingConfidence: CONFIG.minTrackingConfidence
+                });
+
+                faceMesh.onResults(onFaceMeshResults);
+
+                console.log('✓ FaceMesh 初始化成功');
+                document.getElementById('loading').classList.add('hidden');
+            } catch (error) {
+                console.error('❌ FaceMesh 初始化失败:', error);
+                showError(`FaceMesh 初始化失败：${error.message}\n\n请刷新页面重试，或检查网络连接`);
+                document.getElementById('loading').classList.add('hidden');
+            }
+        }
+
+        // ============================================
+        // 检测控制
+        // ============================================
+        async function startDetection() {
+            document.getElementById('errorPanel').classList.add('hidden');
+            const btnStart = document.getElementById('btnStart');
+
+            try {
+                if (!navigator.mediaDevices) {
+                    throw new Error('浏览器不支持摄像头访问');
+                }
+
+                btnStart.disabled = true;
+                btnStart.innerHTML = '<span class="loading-spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;"></span> 启动中...';
+
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: 'user'
+                    },
+                    audio: false
+                });
+
+                videoElement = document.getElementById('video');
+                canvasElement = document.getElementById('canvas');
+                canvasCtx = canvasElement.getContext('2d');
+
+                videoElement.srcObject = stream;
+
+                await new Promise((resolve) => {
+                    videoElement.onloadedmetadata = () => {
+                        videoElement.play();
+                        canvasElement.width = videoElement.videoWidth;
+                        canvasElement.height = videoElement.videoHeight;
+                        resolve();
+                    };
+                });
+
+                camera = new Camera(videoElement, {
+                    onFrame: processFrame,
+                    width: 640,
+                    height: 480
+                });
+
+                await camera.start();
+
+                state.isRunning = true;
+                state.focusStartTime = Date.now();
+                state.breakStartTime = Date.now();
+
+                document.getElementById('btnStart').disabled = true;
+                document.getElementById('btnStop').disabled = false;
+                updateStatus('watching', '正在检测...');
+
+                statsInterval = setInterval(updateStats, 1000);
+                breakInterval = setInterval(checkBreakReminder, 1000);
+
+                btnStart.innerHTML = '<span>▶️</span> 开始检测';
+            } catch (error) {
+                console.error('启动失败:', error);
+                btnStart.disabled = false;
+                btnStart.innerHTML = '<span>▶️</span> 开始检测';
+
+                let message = error.message;
+                if (error.name === 'NotAllowedError') {
+                    message = '摄像头权限被拒绝。请在浏览器设置中允许摄像头访问';
+                } else if (error.name === 'NotFoundError') {
+                    message = '未找到摄像头设备。请检查摄像头是否正确连接';
+                } else if (error.name === 'NotReadableError') {
+                    message = '摄像头正在被其他程序使用。请关闭 Zoom、微信等可能使用摄像头的程序';
+                }
+
+                showError(message);
+            }
+        }
+
+        function stopDetection() {
+            // 停止相机
+            if (camera && typeof camera.stop === 'function') {
+                try {
+                    camera.stop();
+                } catch (e) {
+                    console.warn('停止相机时出错:', e);
+                }
+            }
+            
+            // 停止视频流
+            if (videoElement && videoElement.srcObject) {
+                videoElement.srcObject.getTracks().forEach(track => track.stop());
+                videoElement.srcObject = null;
+            }
+            
+            // 清除定时器
+            if (statsInterval) clearInterval(statsInterval);
+            if (breakInterval) clearInterval(breakInterval);
+
+            state.isRunning = false;
+            state.isWatching = false;
+            
+            // 重置 UI
+            document.getElementById('btnStart').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+            updateStatus('', '已停止');
+            hideAlert();
+            document.getElementById('breakReminder').classList.remove('show');
+            document.getElementById('perfIndicator').textContent = 'FPS: --';
+            
+            console.log('✓ 检测已停止');
+        }
+
+        // ============================================
+        // 帧处理
+        // ============================================
+        async function processFrame() {
+            if (!state.isRunning || !faceMesh) return;
+
+            const now = Date.now();
+
+            // FPS 计算
+            state.frameCount++;
+            if (now - state.lastFpsUpdate >= 1000) {
+                state.currentFps = state.frameCount;
+                state.frameCount = 0;
+                state.lastFpsUpdate = now;
+                document.getElementById('perfIndicator').textContent = `FPS: ${state.currentFps}`;
+            }
+
+            await faceMesh.send({ image: videoElement });
+        }
+
+        function onFaceMeshResults(results) {
+            if (!state.isRunning) return;
+
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const landmarks = results.multiFaceLandmarks[0];
+
+                // 绘制人脸网格
+                drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, { color: '#C0C0C070', lineWidth: 1 });
+                drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, { color: '#FF3030', lineWidth: 2 });
+                drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, { color: '#30FF30', lineWidth: 2 });
+                drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, { color: '#FF69B4', lineWidth: 2 });
+
+                // 眼睛检测 - 使用有效的标志点（和表情检测一致）
+                const eyeOpenness = calculateEyeOpenness(landmarks);
+                const leftEAR = eyeOpenness.leftRatio;
+                const rightEAR = eyeOpenness.rightRatio;
+                
+                // 判断眼睛开合状态
+                const leftEyeOpen = leftEAR > EAR_THRESHOLD;
+                const rightEyeOpen = rightEAR > EAR_THRESHOLD;
+                
+                // 显示 EAR 值（调试用）
+                canvasCtx.fillStyle = '#00FF00';
+                canvasCtx.font = '14px monospace';
+                canvasCtx.fillText(`左 EAR: ${leftEAR.toFixed(3)} ${leftEyeOpen?'开':'关'}`, 10, 30);
+                canvasCtx.fillText(`右 EAR: ${rightEAR.toFixed(3)} ${rightEyeOpen?'开':'关'}`, 10, 50);
+                canvasCtx.fillText(`阈值：${EAR_THRESHOLD}`, 10, 70);
+                
+                // 眨眼时显示视觉反馈
+                if (blinkState === BLINK_COMPLETE) {
+                    canvasCtx.fillStyle = 'rgba(255, 255, 0, 0.7)';
+                    canvasCtx.font = 'bold 24px Arial';
+                    canvasCtx.fillText('👁️ 眨眼!', 10, 100);
+                }
+                
+                // 调试：每帧输出状态（前 100 帧）
+                if (!window.frameCount) window.frameCount = 0;
+                window.frameCount++;
+                if (window.frameCount <= 100 || (window.frameCount % 30 === 0)) {
+                    console.log(`[帧${window.frameCount}] 左 EAR:${leftEAR.toFixed(3)} ${leftEyeOpen?'开':'关'} | 右 EAR:${rightEAR.toFixed(3)} ${rightEyeOpen?'开':'关'} | 眨眼:${state.blinkCount}`);
+                }
+                
+                // 眨眼检测（传入 EAR 值用于调试）
+                detectBlink(leftEyeOpen, rightEyeOpen, leftEAR, rightEAR);
+                
+                // 疲劳检测（每 5 秒更新）
+                updateFatigueLevel();
+                
+                // 眼球追踪
+                const gazePoint = trackGaze(landmarks);
+                
+                // 在画布上显示注视点（最后绘制，确保在最上层）
+                // 先绘制一个半透明背景，让白点更明显
+                canvasCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+                
+                // 绘制注视点（白色圆点 + 黑色边框 + 外圈光晕）
+                const gazeX = gazePoint.x * canvasElement.width;
+                const gazeY = gazePoint.y * canvasElement.height;
+                
+                // 外圈光晕
+                const gradient = canvasCtx.createRadialGradient(gazeX, gazeY, 5, gazeX, gazeY, 30);
+                gradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+                gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                canvasCtx.fillStyle = gradient;
+                canvasCtx.beginPath();
+                canvasCtx.arc(gazeX, gazeY, 30, 0, Math.PI * 2);
+                canvasCtx.fill();
+                
+                // 中心白点
+                canvasCtx.fillStyle = '#FFFFFF';
+                canvasCtx.beginPath();
+                canvasCtx.arc(gazeX, gazeY, 10, 0, Math.PI * 2);
+                canvasCtx.fill();
+                
+                // 黑色边框
+                canvasCtx.strokeStyle = '#000000';
+                canvasCtx.lineWidth = 3;
+                canvasCtx.stroke();
+                
+                // 调试：显示虹膜标志点（如果可用）
+                if (landmarks[468]) {
+                    canvasCtx.fillStyle = '#00FF00';
+                    canvasCtx.font = '12px monospace';
+                    canvasCtx.fillText(`虹膜：✓`, 10, 90);
+                }
+                
+                // 更新 UI
+                const gazeDisplay = `X:${Math.round(gazePoint.x * 100)}% Y:${Math.round(gazePoint.y * 100)}%`;
+                document.getElementById('gazePosition').textContent = gazeDisplay;
+                
+                // 调试日志（每 30 帧）
+                if (!window.gazeDebugCount) window.gazeDebugCount = 0;
+                window.gazeDebugCount++;
+                if (window.gazeDebugCount % 30 === 0) {
+                    console.log('👁️ 注视点:', gazeDisplay, '虹膜标志点:', landmarks[468] ? '有' : '无');
+                }
+
+                // 表情检测
+                detectExpression(landmarks);
+
+                // 头部角度检测
+                const noseTip = landmarks[1];
+                const leftEye = landmarks[33];
+                const rightEye = landmarks[263];
+                const eyeY = (leftEye.y + rightEye.y) / 2;
+                const headTilt = Math.abs(noseTip.y - eyeY);
+
+                const eyesOpen = leftEyeOpen && rightEyeOpen;
+                const isLookingAtScreen = eyesOpen && headTilt > 0.05;
+
+                if (isLookingAtScreen) {
+                    handleWatching();
+                } else {
+                    handleAway();
+                }
+            } else {
+                handleAway();
+            }
+        }
+
+        // 计算眼睛开合度（简化版 EAR）
+        // 直接使用上下眼睑的垂直距离 / 眼睛宽度
+        function calculateEyeOpenness(landmarks, leftEyeOpen, rightEyeOpen) {
+            // 左眼：159(上) - 145(下)
+            const leftEyeTop = landmarks[159];
+            const leftEyeBottom = landmarks[145];
+            const leftEyeLeft = landmarks[33];
+            const leftEyeRight = landmarks[133];
+            
+            // 右眼：386(上) - 374(下)
+            const rightEyeTop = landmarks[386];
+            const rightEyeBottom = landmarks[374];
+            const rightEyeLeft = landmarks[362];
+            const rightEyeRight = landmarks[263];
+            
+            // 计算垂直距离
+            const leftVertical = Math.abs(leftEyeTop.y - leftEyeBottom.y);
+            const rightVertical = Math.abs(rightEyeTop.y - rightEyeBottom.y);
+            
+            // 计算水平宽度
+            const leftWidth = Math.abs(leftEyeLeft.x - leftEyeRight.x);
+            const rightWidth = Math.abs(rightEyeLeft.x - rightEyeRight.x);
+            
+            // 计算比率
+            const leftRatio = leftVertical / (leftWidth || 1);
+            const rightRatio = rightVertical / (rightWidth || 1);
+            const avgRatio = (leftRatio + rightRatio) / 2;
+            
+            return { leftRatio, rightRatio, avgRatio };
+        }
+        
+        // 注意：眨眼检测使用 calculateEyeOpenness 函数，不使用 isEyeOpen/calculateEAR
+
+        // ============================================
+        // 眨眼检测（状态机版本 - 更准确）
+        // ============================================
+        const BLINK_OPEN = 0;
+        const BLINK_CLOSING = 1;
+        const BLINK_CLOSED = 2;
+        const BLINK_OPENING = 3;
+        const BLINK_COMPLETE = 4;
+        
+        let blinkState = BLINK_OPEN;
+        let blinkFrameCounter = 0;
+        let blinkCooldownFrames = 0;
+        let expressionStableCount = 0;
+        
+        // 眨眼检测参数
+        const EAR_THRESHOLD = 0.20;
+        const BLINK_MIN_CLOSED_FRAMES = 1;
+        const BLINK_MAX_CLOSED_FRAMES = 20;
+        const BLINK_COOLDOWN_FRAMES = 10;
+        
+        // 疲劳检测参数（基于医学研究）
+        // 正常眨眼频率：10-20 次/分钟
+        // 疲劳：>25 次/分钟（眼睛干涩，频繁眨眼）
+        // 严重疲劳：<5 次/分钟（注意力过度集中，眨眼减少）或 >35 次
+        const FATIGUE_HIGH_THRESHOLD = 25;  // 高频疲劳阈值
+        const FATIGUE_LOW_THRESHOLD = 5;    // 低频疲劳阈值
+        const FATIGUE_CRITICAL_HIGH = 35;   // 严重疲劳阈值
+        
+        function detectBlink(leftEyeOpen, rightEyeOpen, leftEAR, rightEAR) {
+            const now = Date.now();
+            const avgEAR = (leftEAR + rightEAR) / 2;
+            const eyesClosed = !leftEyeOpen && !rightEyeOpen; // 双眼都闭合才算
+            
+            // 冷却计时
+            if (blinkCooldownFrames > 0) {
+                blinkCooldownFrames--;
+            }
+            
+            // 调试：每次状态变化都输出
+            const oldState = blinkState;
+            
+            // 状态机处理
+            switch (blinkState) {
+                case BLINK_OPEN:
+                    // 等待眼睛闭合
+                    if (eyesClosed && blinkCooldownFrames === 0) {
+                        blinkState = BLINK_CLOSING;
+                        blinkFrameCounter = 0;
+                        console.log('👁️ [眨眼] 开始闭合 EAR:', avgEAR.toFixed(3), '状态:', oldState, '→', blinkState);
+                    }
+                    break;
+                    
+                case BLINK_CLOSING:
+                    blinkFrameCounter++;
+                    if (!eyesClosed) {
+                        // 还没闭合就睁开了，不是有效眨眼
+                        blinkState = BLINK_OPEN;
+                        blinkFrameCounter = 0;
+                        console.log('👁️ [眨眼] 中途睁开，取消 EAR:', avgEAR.toFixed(3));
+                    } else if (blinkFrameCounter >= BLINK_MIN_CLOSED_FRAMES) {
+                        blinkState = BLINK_CLOSED;
+                        console.log('👁️ [眨眼] 已闭合 帧数:', blinkFrameCounter, 'EAR:', avgEAR.toFixed(3));
+                    } else if (blinkFrameCounter > BLINK_MAX_CLOSED_FRAMES) {
+                        blinkState = BLINK_OPEN;
+                        blinkFrameCounter = 0;
+                        console.log('👁️ [眨眼] 闭合时间过长，取消');
+                    }
+                    break;
+                    
+                case BLINK_CLOSED:
+                    blinkFrameCounter++;
+                    if (!eyesClosed) {
+                        // 开始睁开
+                        blinkState = BLINK_OPENING;
+                        console.log('👁️ [眨眼] 开始睁开 EAR:', avgEAR.toFixed(3));
+                    } else if (blinkFrameCounter > BLINK_MAX_CLOSED_FRAMES) {
+                        blinkState = BLINK_OPEN;
+                        blinkFrameCounter = 0;
+                        console.log('👁️ [眨眼] 闭合时间过长，取消');
+                    }
+                    break;
+                    
+                case BLINK_OPENING:
+                    blinkFrameCounter++;
+                    if (!eyesClosed) {
+                        // 完全睁开，完成一次眨眼！
+                        blinkState = BLINK_COMPLETE;
+                        console.log('👁️ [眨眼] ✓ 完成！EAR:', avgEAR.toFixed(3));
+                    } else {
+                        blinkState = BLINK_CLOSED;
+                    }
+                    break;
+                    
+                case BLINK_COMPLETE:
+                    // 计数并重置
+                    state.blinkCount++;
+                    document.getElementById('blinkCount').textContent = state.blinkCount;
+                    blinkCooldownFrames = BLINK_COOLDOWN_FRAMES;
+                    blinkState = BLINK_OPEN;
+                    blinkFrameCounter = 0;
+                    
+                    // 计算眨眼频率（次/分钟）
+                    const elapsedTime = (now - (state.focusStartTime || now)) / 60000;
+                    if (elapsedTime > 0.05) {
+                        state.blinkRatePerMinute = Math.round(state.blinkCount / elapsedTime);
+                        document.getElementById('blinkRate').textContent = state.blinkRatePerMinute + ' 次/分';
+                        console.log('👁️ 眨眼频率:', state.blinkRatePerMinute, '次/分钟', '总次数:', state.blinkCount);
+                    }
+                    
+                    // GSAP 数字缩放反馈
+                    gsap.fromTo('#blinkCount', 
+                        { scale: 1.3 },
+                        { scale: 1, duration: 0.3, ease: 'back.out(1.7)' }
+                    );
+                    break;
+            }
+            
+            // 调试输出：每 60 帧输出一次状态（使用独立计数器）
+            if (!window.blinkDebugCounter) window.blinkDebugCounter = 0;
+            window.blinkDebugCounter++;
+            if (window.blinkDebugCounter % 60 === 0) {
+                console.log('👁️ 眼睛状态 - 左 EAR:', leftEAR.toFixed(3), leftEyeOpen ? '(开)' : '(关)', 
+                           '右 EAR:', rightEAR.toFixed(3), rightEyeOpen ? '(开)' : '(关)',
+                           '眨眼次数:', state.blinkCount, '状态:', blinkState);
+            }
+        }
+
+        // ============================================
+        // 疲劳检测（基于眨眼频率）
+        // ============================================
+        function updateFatigueLevel() {
+            const now = Date.now();
+            
+            // 每 5 秒更新一次疲劳状态
+            if (now - state.lastBlinkRateCheck < 5000) return;
+            state.lastBlinkRateCheck = now;
+            
+            const rate = state.blinkRatePerMinute;
+            let newFatigueLevel = 'normal';
+            let fatiguePercent = 0;
+            
+            // 基于医学研究的疲劳判断
+            if (rate >= FATIGUE_CRITICAL_HIGH) {
+                newFatigueLevel = 'veryTired';
+                fatiguePercent = 100;
+            } else if (rate >= FATIGUE_HIGH_THRESHOLD) {
+                newFatigueLevel = 'tired';
+                fatiguePercent = 60 + (rate - FATIGUE_HIGH_THRESHOLD) / (FATIGUE_CRITICAL_HIGH - FATIGUE_HIGH_THRESHOLD) * 40;
+            } else if (rate <= FATIGUE_LOW_THRESHOLD && rate > 0) {
+                newFatigueLevel = 'tired';
+                fatiguePercent = 60;
+            } else if (rate === 0 && state.isRunning && (now - state.focusStartTime) > 30000) {
+                // 超过 30 秒没有眨眼
+                newFatigueLevel = 'veryTired';
+                fatiguePercent = 100;
+            } else {
+                newFatigueLevel = 'normal';
+                // 正常范围内，10-20 为最佳，计算偏离度
+                if (rate >= 10 && rate <= 20) {
+                    fatiguePercent = (rate - 10) / 10 * 30; // 0-30%
+                } else if (rate < 10) {
+                    fatiguePercent = rate / 10 * 30;
+                } else {
+                    fatiguePercent = 30 + (rate - 20) / 5 * 30; // 30-60%
+                }
+            }
+            
+            // 更新状态
+            if (newFatigueLevel !== state.fatigueLevel) {
+                state.fatigueLevel = newFatigueLevel;
+                
+                const fatigueMap = {
+                    'normal': '😐 正常',
+                    'tired': '😫 疲劳',
+                    'veryTired': '😵 严重疲劳'
+                };
+                
+                document.getElementById('fatigueLevel').textContent = fatigueMap[newFatigueLevel];
+                
+                const fatigueBar = document.getElementById('fatigueBar');
+                fatigueBar.style.width = fatiguePercent + '%';
+                
+                // 更新进度条颜色
+                fatigueBar.className = 'progress-fill';
+                if (newFatigueLevel === 'tired') {
+                    fatigueBar.classList.add('tired');
+                } else if (newFatigueLevel === 'veryTired') {
+                    fatigueBar.classList.add('veryTired');
+                }
+                
+                console.log('😴 疲劳状态:', fatigueMap[newFatigueLevel], '眨眼频率:', rate, '次/分钟');
+                
+                // 严重疲劳时发出告警
+                if (newFatigueLevel === 'veryTired' && state.soundEnabled) {
+                    showFatigueAlert();
+                }
+            }
+        }
+        
+        function showFatigueAlert() {
+            // 显示疲劳告警
+            const alert = document.createElement('div');
+            alert.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #ef4444;
+                color: white;
+                padding: 18px 36px;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 600;
+                box-shadow: 0 8px 30px rgba(239,68,68,0.3);
+                z-index: 10000;
+            `;
+            alert.innerHTML = `
+                ⚠️ 您已严重疲劳！<br>
+                <span style="font-size:13px;font-weight:normal;">建议立即休息，远眺 20 秒</span>
+            `;
+            document.body.appendChild(alert);
+            
+            // GSAP 动画
+            gsap.from(alert, {
+                opacity: 0,
+                y: -30,
+                duration: 0.4,
+                ease: 'power3.out'
+            });
+            
+            // 播放告警音
+            playFatigueAlertSound();
+            
+            // 3 秒后移除
+            setTimeout(() => {
+                gsap.to(alert, {
+                    opacity: 0,
+                    y: -20,
+                    duration: 0.3,
+                    ease: 'power3.out',
+                    onComplete: () => alert.remove()
+                });
+            }, 5000);
+        }
+        
+        function playFatigueAlertSound() {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = 600;
+                oscillator.type = 'sine';
+                gainNode.gain.value = 0.4;
+                
+                oscillator.start();
+                
+                // 三声提示音
+                setTimeout(() => { gainNode.gain.value = 0; }, 150);
+                setTimeout(() => { gainNode.gain.value = 0.4; }, 250);
+                setTimeout(() => { gainNode.gain.value = 0; }, 400);
+                setTimeout(() => { gainNode.gain.value = 0.4; }, 500);
+                setTimeout(() => { gainNode.gain.value = 0; }, 650);
+                setTimeout(() => { gainNode.gain.value = 0.4; }, 750);
+                setTimeout(() => { oscillator.stop(); }, 1000);
+            } catch (e) {
+                console.warn('告警音播放失败:', e);
+            }
+        }
+
+        // ============================================
+        // 眼球追踪（使用虹膜标志点 - 精确版）
+        // ============================================
+        // MediaPipe 虹膜关键点（启用 refineLandmarks 时可用）：
+        // 左眼虹膜：468(中心), 469(上), 470(右), 471(下), 472(左)
+        // 右眼虹膜：473(中心), 474(上), 475(右), 476(下), 477(左)
+        
+        const GAZE_SMOOTHING = 0.85; // 平滑系数（越高越稳定，越低越灵敏）
+        
+        function trackGaze(landmarks) {
+            // 检查是否有虹膜标志点
+            const hasIris = landmarks[468] && landmarks[473];
+            
+            // 首次检测时输出调试信息
+            if (!window.irisDebugLogged) {
+                window.irisDebugLogged = true;
+                console.log('🔍 虹膜标志点检测:', hasIris ? '✓ 可用' : '✗ 不可用');
+                if (hasIris) {
+                    console.log('   左眼虹膜 [468]:', landmarks[468]);
+                    console.log('   右眼虹膜 [473]:', landmarks[473]);
+                } else {
+                    console.log('   ⚠️ 请确保 FaceMesh 启用了 refineLandmarks: true');
+                }
+            }
+            
+            if (hasIris) {
+                // 使用虹膜中心点精确追踪
+                const leftIris = landmarks[468];
+                const rightIris = landmarks[473];
+                
+                // 获取眼角位置作为参考
+                const leftEyeLeft = landmarks[33];
+                const leftEyeRight = landmarks[133];
+                const rightEyeLeft = landmarks[362];
+                const rightEyeRight = landmarks[263];
+                
+                // 计算左眼虹膜相对于眼角的水平位置
+                const leftEyeWidth = leftEyeRight.x - leftEyeLeft.x;
+                const leftIrisX = (leftIris.x - leftEyeLeft.x) / leftEyeWidth;
+                
+                // 计算右眼虹膜相对于眼角的水平位置
+                const rightEyeWidth = rightEyeRight.x - rightEyeLeft.x;
+                const rightIrisX = (rightIris.x - rightEyeLeft.x) / rightEyeWidth;
+                
+                // 获取上下眼睑位置
+                const leftEyeTop = landmarks[159];
+                const leftEyeBottom = landmarks[145];
+                const rightEyeTop = landmarks[386];
+                const rightEyeBottom = landmarks[374];
+                
+                // 计算虹膜相对于上下眼睑的垂直位置
+                const leftEyeHeight = leftEyeBottom.y - leftEyeTop.y;
+                const leftIrisY = (leftIris.y - leftEyeTop.y) / leftEyeHeight;
+                
+                const rightEyeHeight = rightEyeBottom.y - rightEyeTop.y;
+                const rightIrisY = (rightIris.y - rightEyeTop.y) / rightEyeHeight;
+                
+                // 平均左右眼数据
+                const avgIrisX = (leftIrisX + rightIrisX) / 2;
+                const avgIrisY = (leftIrisY + rightIrisY) / 2;
+                
+                // 映射到屏幕坐标（0-1）
+                // 虹膜在眼睛左侧 = 看左边，右侧 = 看右边
+                let gazeX = avgIrisX;
+                let gazeY = avgIrisY;
+                
+                // 平滑处理
+                state.gazePoint.x = state.gazePoint.x * GAZE_SMOOTHING + gazeX * (1 - GAZE_SMOOTHING);
+                state.gazePoint.y = state.gazePoint.y * GAZE_SMOOTHING + gazeY * (1 - GAZE_SMOOTHING);
+                
+            } else {
+                // 降级方案：使用眼睛宽高比估算（不太准确）
+                const leftEyeLeft = landmarks[33];
+                const leftEyeRight = landmarks[133];
+                const rightEyeLeft = landmarks[362];
+                const rightEyeRight = landmarks[263];
+                
+                // 通过眼睛宽度变化估算水平注视
+                const leftWidth = leftEyeRight.x - leftEyeLeft.x;
+                const rightWidth = rightEyeRight.x - rightEyeLeft.x;
+                const avgWidth = (leftWidth + rightWidth) / 2;
+                
+                // 宽度变窄 = 向侧面看
+                const gazeX = 0.5 + (0.04 - avgWidth) * 5;
+                const gazeY = 0.5; // 无法准确估算垂直方向
+                
+                state.gazePoint.x = state.gazePoint.x * 0.9 + gazeX * 0.1;
+                state.gazePoint.y = 0.5;
+            }
+            
+            // 限制在 0-1 范围内
+            state.gazePoint.x = Math.max(0, Math.min(1, state.gazePoint.x));
+            state.gazePoint.y = Math.max(0, Math.min(1, state.gazePoint.y));
+            
+            // 应用校准变换
+            const calibratedGaze = applyGazeTransform(state.gazePoint);
+            
+            return calibratedGaze;
+        }
+        
+        // ============================================
+        // 表情检测（简化可靠版）
+        // ============================================
+        const expressionMap = {
+            'neutral': '😐 自然',
+            'happy': '😊 开心',
+            'surprised': '😮 惊讶',
+            'focused': '🤔 专注',
+            'talking': '💬 说话'
+        };
+        
+        let expressionDebugCounter = 0;
+        
+        function detectExpression(landmarks) {
+            // === 1. 嘴巴张开检测 ===
+            const upperLipTop = landmarks[13];
+            const lowerLipBottom = landmarks[14];
+            const mouthOpenDistance = Math.abs(upperLipTop.y - lowerLipBottom.y);
+            state.mouthOpen = mouthOpenDistance > 0.03; // 降低阈值，更灵敏
+            
+            // === 2. 微笑检测（嘴角上扬）===
+            const leftMouthCorner = landmarks[61];
+            const rightMouthCorner = landmarks[291];
+            const mouthCenter = landmarks[13];
+            
+            // 计算嘴角相对于嘴巴中心的位置（正值 = 嘴角上扬 = 微笑）
+            const avgMouthCornerY = (leftMouthCorner.y + rightMouthCorner.y) / 2;
+            const smileScore = mouthCenter.y - avgMouthCornerY;
+            state.smileDetected = smileScore > 0.01; // 降低阈值
+            
+            // === 3. 眼睛睁大检测（惊讶）===
+            const leftEyeTop = landmarks[159];
+            const leftEyeBottom = landmarks[145];
+            const rightEyeTop = landmarks[386];
+            const rightEyeBottom = landmarks[374];
+            const leftEyeWidth = Math.abs(landmarks[33].x - landmarks[133].x);
+            const rightEyeWidth = Math.abs(landmarks[362].x - landmarks[263].x);
+            
+            const leftEyeRatio = Math.abs(leftEyeTop.y - leftEyeBottom.y) / leftEyeWidth;
+            const rightEyeRatio = Math.abs(rightEyeTop.y - rightEyeBottom.y) / rightEyeWidth;
+            const avgEyeRatio = (leftEyeRatio + rightEyeRatio) / 2;
+            
+            const wideEyes = avgEyeRatio > 0.3; // 降低阈值，更容易检测
+            
+            // === 4. 综合判断表情 ===
+            let newExpression = 'neutral';
+            
+            // 优先级：惊讶 > 开心 > 说话 > 专注 > 自然
+            if (wideEyes && state.mouthOpen) {
+                newExpression = 'surprised';
+            } else if (state.smileDetected && !state.mouthOpen) {
+                newExpression = 'happy';
+            } else if (state.mouthOpen && !wideEyes) {
+                newExpression = 'talking';
+            } else if (!state.mouthOpen && !wideEyes) {
+                newExpression = 'focused';
+            }
+            
+            // === 5. 平滑过渡（避免频繁切换）===
+            if (newExpression !== state.expression) {
+                expressionStableCount++;
+                if (expressionStableCount >= 3) { // 减少到 3 帧，响应更快
+                    state.expression = newExpression;
+                    expressionStableCount = 0;
+                    console.log('😊 表情:', expressionMap[newExpression], 
+                                '微笑:', smileScore.toFixed(3), 
+                                '嘴开:', mouthOpenDistance.toFixed(3),
+                                '睁眼:', avgEyeRatio.toFixed(3));
+                    
+                    // GSAP 表情变化反馈
+                    gsap.fromTo('#expression',
+                        { scale: 1.2 },
+                        { scale: 1, duration: 0.25, ease: 'back.out(1.7)' }
+                    );
+                }
+            } else {
+                expressionStableCount = 0;
+            }
+            
+            // === 6. 更新 UI ===
+            const displayExpr = expressionMap[state.expression] || '😐 自然';
+            document.getElementById('expression').textContent = displayExpr;
+            
+            // 调试输出（每 60 帧一次）
+            expressionDebugCounter++;
+            if (expressionDebugCounter % 60 === 0) {
+                console.log('📊 表情参数 - 微笑:', smileScore.toFixed(3), 
+                            '嘴开:', mouthOpenDistance.toFixed(3),
+                            '睁眼:', avgEyeRatio.toFixed(3),
+                            '当前表情:', expressionMap[state.expression]);
+            }
+        }
+
+        // ============================================
+        // 状态处理
+        // ============================================
+        function handleWatching() {
+            if (!state.isWatching) {
+                if (state.awayStartTime) {
+                    const awayDuration = Date.now() - state.awayStartTime;
+                    if (awayDuration > 1000) {
+                        state.awayCount++;
+                        document.getElementById('awayCount').textContent = state.awayCount;
+                        
+                        // GSAP 动画
+                        gsap.fromTo('#awayCount',
+                            { scale: 1.3 },
+                            { scale: 1, duration: 0.3, ease: 'back.out(1.7)' }
+                        );
+                    }
+                    state.awayStartTime = null;
+                }
+
+                state.isWatching = true;
+                if (!state.focusStartTime) state.focusStartTime = Date.now();
+
+                updateStatus('watching', '✓ 在看屏幕');
+                hideAlert();
+            }
+        }
+
+        function handleAway() {
+            const threshold = parseInt(document.getElementById('thresholdInput').value) * 1000;
+
+            if (state.isWatching) {
+                state.awayStartTime = Date.now();
+                state.isWatching = false;
+
+                if (state.focusStartTime) {
+                    state.totalFocusTime += Date.now() - state.focusStartTime;
+                    state.focusStartTime = null;
+                }
+            } else if (state.awayStartTime) {
+                const awayDuration = Date.now() - state.awayStartTime;
+                if (awayDuration >= threshold) {
+                    updateStatus('away', '⚠ 视线离开');
+                    showAlert();
+                }
+            }
+        }
+
+        function updateStatus(status, text) {
+            const dot = document.getElementById('statusDot');
+            const textStatus = document.getElementById('statusText');
+
+            dot.className = 'status-dot';
+            if (status === 'watching') dot.classList.add('watching');
+            else if (status === 'away') dot.classList.add('away');
+
+            textStatus.textContent = text;
+        }
+
+        // ============================================
+        // 统计更新
+        // ============================================
+        function updateStats() {
+            if (!state.isRunning) return;
+
+            let currentFocusTime = state.totalFocusTime;
+            if (state.focusStartTime) {
+                currentFocusTime += Date.now() - state.focusStartTime;
+            }
+
+            const totalTime = Date.now() - (state.focusStartTime || state.awayStartTime || Date.now()) + state.totalFocusTime;
+            const focusRate = totalTime > 0 ? Math.round((currentFocusTime / totalTime) * 100) : 100;
+
+            document.getElementById('focusTime').textContent = formatTime(currentFocusTime);
+            document.getElementById('focusRate').textContent = focusRate + '%';
+            document.getElementById('timerDisplay').textContent = formatTime(Date.now() - (state.breakStartTime || Date.now()));
+        }
+
+        // ============================================
+        // 休息提醒
+        // ============================================
+        function checkBreakReminder() {
+            if (!state.isRunning || !state.breakStartTime) return;
+
+            const breakInterval = parseInt(document.getElementById('breakIntervalInput').value) * 60 * 1000;
+            const elapsed = Date.now() - state.breakStartTime;
+            const remaining = Math.max(0, breakInterval - elapsed);
+
+            // 更新进度条
+            const progress = Math.min(100, (elapsed / breakInterval) * 100);
+            document.getElementById('breakProgress').style.width = `${progress}%`;
+            document.getElementById('breakProgressText').textContent = formatTime(remaining);
+
+            // 检查是否需要提醒
+            if (elapsed >= breakInterval && Date.now() - state.lastBreakReminder > 60000) {
+                state.lastBreakReminder = Date.now();
+                showBreakReminder();
+            }
+        }
+
+        function showBreakReminder() {
+            const reminder = document.getElementById('breakReminder');
+            document.getElementById('breakTimeDisplay').textContent = document.getElementById('breakIntervalInput').value;
+            reminder.classList.add('show');
+            
+            // GSAP 动画
+            gsap.from(reminder, {
+                opacity: 0,
+                y: -20,
+                duration: 0.4,
+                ease: 'power3.out'
+            });
+
+            if (state.soundEnabled) {
+                playAlertSound();
+            }
+
+            // 5 秒后自动隐藏
+            setTimeout(() => {
+                gsap.to(reminder, {
+                    opacity: 0,
+                    y: -20,
+                    duration: 0.3,
+                    ease: 'power3.out',
+                    onComplete: () => reminder.classList.remove('show')
+                });
+            }, 5000);
+        }
+
+        // ============================================
+        // 警告和声音
+        // ============================================
+        function showAlert() {
+            const now = Date.now();
+            if (now - state.lastAwayAlert < CONFIG.alertCooldown) return;
+
+            state.lastAwayAlert = now;
+            document.getElementById('alertOverlay').classList.add('active');
+            
+            // GSAP 动画
+            gsap.fromTo('.alert-box',
+                { scale: 0.9, opacity: 0 },
+                { scale: 1, opacity: 1, duration: 0.4, ease: 'back.out(1.7)' }
+            );
+
+            if (state.soundEnabled) playAlertSound();
+
+            setTimeout(() => hideAlert(), 3000);
+        }
+
+        function hideAlert() {
+            const overlay = document.getElementById('alertOverlay');
+            overlay.classList.remove('active');
+            
+            // GSAP 淡出
+            gsap.to('.alert-box', {
+                scale: 0.95,
+                opacity: 0,
+                duration: 0.3,
+                ease: 'power3.out'
+            });
+        }
+
+        function playAlertSound() {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                oscillator.frequency.value = 800;
+                oscillator.type = 'sine';
+                gainNode.gain.value = 0.3;
+
+                oscillator.start();
+
+                setTimeout(() => { gainNode.gain.value = 0; }, 150);
+                setTimeout(() => { gainNode.gain.value = 0.3; }, 250);
+                setTimeout(() => { gainNode.gain.value = 0; }, 400);
+                setTimeout(() => { oscillator.stop(); }, 500);
+            } catch (e) {
+                console.warn('声音播放失败:', e);
+            }
+        }
+
+        // ============================================
+        // 重置
+        // ============================================
+        function resetStats() {
+            state.totalFocusTime = 0;
+            state.awayCount = 0;
+            state.focusStartTime = state.isRunning ? Date.now() : null;
+            state.breakStartTime = state.isRunning ? Date.now() : null;
+            state.lastBreakReminder = 0;
+            
+            // 重置眨眼统计
+            state.blinkCount = 0;
+            state.blinkRatePerMinute = 0;
+            state.lastBlinkTime = 0;
+            blinkState = BLINK_OPEN;
+            blinkFrameCounter = 0;
+            blinkCooldownFrames = 0;
+            
+            // 重置疲劳状态
+            state.fatigueLevel = 'normal';
+            state.lastBlinkRateCheck = 0;
+            
+            // 重置表情状态
+            state.expression = 'neutral';
+            expressionStableCount = 0;
+            
+            // 重置眼球追踪
+            state.gazePoint = { x: 0.5, y: 0.5 };
+            
+            // 不清除校准数据，除非用户明确要求
+
+            document.getElementById('focusTime').textContent = '00:00';
+            document.getElementById('awayCount').textContent = '0';
+            document.getElementById('focusRate').textContent = '100%';
+            document.getElementById('timerDisplay').textContent = '00:00';
+            document.getElementById('breakProgress').style.width = '0%';
+            document.getElementById('breakProgressText').textContent = formatTime(
+                parseInt(document.getElementById('breakIntervalInput').value) * 60 * 1000
+            );
+            document.getElementById('blinkCount').textContent = '0';
+            document.getElementById('blinkRate').textContent = '--';
+            document.getElementById('expression').textContent = '--';
+            document.getElementById('fatigueLevel').textContent = '😐 正常';
+            document.getElementById('fatigueBar').style.width = '0%';
+            document.getElementById('gazePosition').textContent = '--';
+            
+            // GSAP 重置动画
+            gsap.from('.stat-value', {
+                scale: 0.9,
+                opacity: 0.5,
+                duration: 0.3,
+                stagger: 0.05,
+                ease: 'power3.out'
+            });
+        }
+
+        // ============================================
+        // 校准系统
+        // ============================================
+        function showCalibrationUI() {
+            // 创建校准覆盖层
+            const overlay = document.createElement('div');
+            overlay.id = 'calibrationOverlay';
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.95);
+                z-index: 10000;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                color: white;
+                font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            `;
+            
+            overlay.innerHTML = `
+                <h1 style="font-size: 32px; margin-bottom: 10px;">👁️ 眼球追踪校准</h1>
+                <p style="font-size: 18px; color: #aaa; margin-bottom: 40px;">请依次注视屏幕上的红点，然后点击该点</p>
+                <div style="display: flex; gap: 20px; margin-bottom: 30px;">
+                    <div style="background: rgba(255,255,255,0.1); padding: 20px 40px; border-radius: 12px;">
+                        <div style="font-size: 24px; font-weight: bold;" id="calibrationProgress">1 / 5</div>
+                        <div style="font-size: 14px; color: #aaa; margin-top: 5px;">当前点位</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 20px 40px; border-radius: 12px;">
+                        <div style="font-size: 24px; font-weight: bold;" id="calibrationPoint">左上角</div>
+                        <div style="font-size: 14px; color: #aaa; margin-top: 5px;">注视位置</div>
+                    </div>
+                </div>
+                <div style="color: #666; font-size: 14px;">
+                    💡 提示：保持头部稳定，眼睛自然注视红点中心
+                </div>
+                <button onclick="skipCalibration()" style="
+                    margin-top: 30px;
+                    padding: 12px 24px;
+                    background: transparent;
+                    border: 1px solid #666;
+                    color: #666;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 14px;
+                    transition: all 0.2s ease;
+                ">跳过校准（使用默认精度）</button>
+            `;
+            
+            document.body.appendChild(overlay);
+            
+            // GSAP 入场动画
+            gsap.from(overlay, {
+                opacity: 0,
+                duration: 0.4,
+                ease: 'power3.out'
+            });
+            
+            // 显示第一个校准点
+            showCalibrationPoint(0);
+        }
+        
+        function showCalibrationPoint(pointIndex) {
+            if (pointIndex >= calibrationState.points.length) {
+                // 校准完成
+                finishCalibration();
+                return;
+            }
+            
+            const point = calibrationState.points[pointIndex];
+            calibrationState.currentPoint = pointIndex;
+            
+            // 更新进度显示
+            document.getElementById('calibrationProgress').textContent = `${pointIndex + 1} / ${calibrationState.points.length}`;
+            document.getElementById('calibrationPoint').textContent = point.name;
+            
+            // 创建校准点
+            const calPoint = document.createElement('div');
+            calPoint.id = 'calibrationPoint';
+            calPoint.style.cssText = `
+                position: absolute;
+                left: ${point.x * 100}%;
+                top: ${point.y * 100}%;
+                transform: translate(-50%, -50%);
+                width: 50px;
+                height: 50px;
+                border: 3px solid #ef4444;
+                border-radius: 50%;
+                background: radial-gradient(circle, #ef4444 0%, transparent 70%);
+                cursor: pointer;
+                z-index: 10001;
+            `;
+            
+            // 添加点击事件
+            calPoint.onclick = () => {
+                captureIrisData();
+                
+                // GSAP 点击动画
+                gsap.to(calPoint, {
+                    scale: 0.8,
+                    opacity: 0,
+                    duration: 0.2,
+                    ease: 'power3.in',
+                    onComplete: () => {
+                        calPoint.remove();
+                        showCalibrationPoint(pointIndex + 1);
+                    }
+                });
+            };
+            
+            document.body.appendChild(calPoint);
+            
+            // GSAP 脉冲动画（替代 CSS）
+            gsap.to(calPoint, {
+                scale: 1.2,
+                opacity: 0.7,
+                duration: 0.8,
+                repeat: -1,
+                yoyo: true,
+                ease: 'power1.inOut'
+            });
+        }
+        
+        function captureIrisData() {
+            // 获取当前虹膜位置（从最近的眼球追踪数据）
+            const irisData = {
+                x: state.gazePoint.x,
+                y: state.gazePoint.y,
+                targetX: calibrationState.points[calibrationState.currentPoint].x,
+                targetY: calibrationState.points[calibrationState.currentPoint].y
+            };
+            
+            calibrationState.irisData.push(irisData);
+            console.log('✅ 已记录校准点:', irisData);
+        }
+        
+        function finishCalibration() {
+            // 计算变换矩阵（使用最小二乘法）
+            calculateGazeTransform();
+            
+            // 保存校准数据
+            if (calibrationState.gazeTransform) {
+                localStorage.setItem('gaze_calibration', JSON.stringify(calibrationState.gazeTransform));
+            }
+            
+            // 移除覆盖层
+            const overlay = document.getElementById('calibrationOverlay');
+            if (overlay) {
+                gsap.to(overlay, {
+                    opacity: 0,
+                    duration: 0.3,
+                    ease: 'power3.out',
+                    onComplete: () => overlay.remove()
+                });
+            }
+            
+            // 显示校准完成提示
+            const toast = document.createElement('div');
+            toast.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #10b981;
+                color: white;
+                padding: 18px 36px;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 600;
+                box-shadow: 0 8px 30px rgba(16,185,129,0.3);
+                z-index: 10000;
+            `;
+            toast.innerHTML = '✅ 校准完成！眼球追踪已优化';
+            document.body.appendChild(toast);
+            
+            // GSAP 动画
+            gsap.from(toast, {
+                opacity: 0,
+                y: -30,
+                duration: 0.4,
+                ease: 'power3.out'
+            });
+            
+            setTimeout(() => {
+                gsap.to(toast, {
+                    opacity: 0,
+                    y: -20,
+                    duration: 0.3,
+                    ease: 'power3.out',
+                    onComplete: () => toast.remove()
+                });
+            }, 3000);
+            
+            console.log('🎯 校准完成，变换矩阵:', calibrationState.gazeTransform);
+        }
+        
+        function calculateGazeTransform() {
+            const data = calibrationState.irisData;
+            if (data.length < 3) {
+                console.warn('⚠️ 校准点不足，使用默认映射');
+                return;
+            }
+            
+            // 简化版：计算线性映射参数
+            // gazeX = irisX * scaleX + offsetX
+            // gazeY = irisY * scaleY + offsetY
+            
+            let sumIrisX = 0, sumIrisY = 0, sumTargetX = 0, sumTargetY = 0;
+            
+            data.forEach(d => {
+                sumIrisX += d.x;
+                sumIrisY += d.y;
+                sumTargetX += d.targetX;
+                sumTargetY += d.targetY;
+            });
+            
+            const avgIrisX = sumIrisX / data.length;
+            const avgIrisY = sumIrisY / data.length;
+            const avgTargetX = sumTargetX / data.length;
+            const avgTargetY = sumTargetY / data.length;
+            
+            // 计算缩放和偏移
+            let sumIX2 = 0, sumIXT = 0, sumIY2 = 0, sumIYT = 0;
+            
+            data.forEach(d => {
+                const dx = d.x - avgIrisX;
+                const dy = d.y - avgIrisY;
+                const tx = d.targetX - avgTargetX;
+                const ty = d.targetY - avgTargetY;
+                
+                sumIX2 += dx * dx;
+                sumIXT += dx * tx;
+                sumIY2 += dy * dy;
+                sumIYT += dy * ty;
+            });
+            
+            const scaleX = sumIX2 > 0 ? sumIXT / sumIX2 : 1;
+            const scaleY = sumIY2 > 0 ? sumIYT / sumIY2 : 1;
+            const offsetX = avgTargetX - avgIrisX * scaleX;
+            const offsetY = avgTargetY - avgIrisY * scaleY;
+            
+            calibrationState.gazeTransform = { scaleX, scaleY, offsetX, offsetY };
+            
+            // 应用平滑限制，避免过度校正
+            calibrationState.gazeTransform.scaleX = Math.max(0.5, Math.min(2.0, scaleX));
+            calibrationState.gazeTransform.scaleY = Math.max(0.5, Math.min(2.0, scaleY));
+        }
+        
+        // 加载已保存的校准数据
+        function loadCalibration() {
+            const saved = localStorage.getItem('gaze_calibration');
+            if (saved) {
+                try {
+                    calibrationState.gazeTransform = JSON.parse(saved);
+                    console.log('✅ 已加载保存的校准数据:', calibrationState.gazeTransform);
+                } catch (e) {
+                    console.warn('⚠️ 加载校准数据失败');
+                }
+            }
+        }
+        
+        function applyGazeTransform(rawGaze) {
+            if (!calibrationState.gazeTransform) {
+                return rawGaze;
+            }
+            
+            const t = calibrationState.gazeTransform;
+            let transformed = {
+                x: rawGaze.x * t.scaleX + t.offsetX,
+                y: rawGaze.y * t.scaleY + t.offsetY
+            };
+            
+            // 确保在 0-1 范围内
+            transformed.x = Math.max(0, Math.min(1, transformed.x));
+            transformed.y = Math.max(0, Math.min(1, transformed.y));
+            
+            return transformed;
+        }
+        
+        function skipCalibration() {
+            const overlay = document.getElementById('calibrationOverlay');
+            if (overlay) {
+                gsap.to(overlay, {
+                    opacity: 0,
+                    duration: 0.3,
+                    ease: 'power3.out',
+                    onComplete: () => overlay.remove()
+                });
+            }
+            
+            console.log('⚠️ 已跳过校准，使用默认精度');
+        }
+        
+        function startCalibration() {
+            calibrationState.isCalibrating = true;
+            calibrationState.irisData = [];
+            calibrationState.gazeTransform = null;
+            showCalibrationUI();
+        }
+
+        // 页面关闭时清理
+        window.addEventListener('beforeunload', stopDetection);
+    </script>
+</body>
+</html>
